@@ -2,6 +2,21 @@ from urlextract import URLExtract
 from wordcloud import WordCloud
 from collections import Counter
 import emoji 
+import nltk
+import spacy
+import re
+from nltk.sentiment import  SentimentIntensityAnalyzer
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
+
+
+nlp = spacy.load('en_core_web_sm')
+#nltk.download('maxent_ne_chunker')
+#nltk.download('vader_lexicon')
+#nltk.download('words')
+#nltk.download('stopwords')
+#nltk.download('punkt')
 ext=URLExtract()
 import pandas as pd
 def fetch_stats(selected_user,df):
@@ -131,3 +146,73 @@ def activity_heatmap(selected_user,df):
     user_heatmap = df.pivot_table(index='day_name', columns='period', values='message', aggfunc='count').fillna(0)
 
     return user_heatmap
+
+import pandas as pd
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+def sentiment_analysis(selected_user, df):
+    sia = SentimentIntensityAnalyzer()
+    if selected_user != 'Overall':
+        df = df[df['user'] == selected_user]
+    sentiments = []
+    # Get sentiment scores for each message
+    for message in df['message']:
+        sentiments.append(sia.polarity_scores(message))
+
+    # Convert the list of sentiment scores to a DataFrame
+    sentiment_df = pd.DataFrame(sentiments)
+
+    # Determine which sentiment is the highest for each message
+    sentiment_df['max_sentiment'] = sentiment_df[['neg', 'neu', 'pos']].idxmax(axis=1)
+
+    # Create a new DataFrame with the highest sentiment for each message
+    sentiment_df_max = pd.DataFrame()
+    sentiment_df_max['message'] = df['message']
+    sentiment_df_max['sentiment'] = sentiment_df['max_sentiment']
+    
+    # Map sentiment to human-readable labels
+    sentiment_df_max['sentiment'] = sentiment_df_max['sentiment'].map({
+        'neg': 'Negative',
+        'neu': 'Neutral',
+        'pos': 'Positive'
+    })
+
+    # Calculate the mean sentiment scores
+    mean_sentiment = sentiment_df[['neg', 'neu', 'pos']].mean().to_dict()
+
+    # Determine overall sentiment based on the highest mean value
+    overall_sentiment = max(mean_sentiment, key=mean_sentiment.get)
+    if overall_sentiment == 'neg':
+        overall_sentiment_label = 'Negative'
+    elif overall_sentiment == 'neu':
+        overall_sentiment_label = 'Neutral'
+    elif overall_sentiment == 'pos':
+        overall_sentiment_label = 'Positive'
+    else:
+        overall_sentiment_label = 'Unknown'
+
+    return sentiment_df_max, overall_sentiment_label
+
+def most_common_words(selected_user, df, top_n=5):
+    f = open('stop_hinglish.txt', 'r')
+    stop_words = f.read().splitlines()
+
+    if selected_user != 'Overall':
+        df = df[df['user'] == selected_user]
+
+    temp = df[df['user'] != 'group_notification']
+    temp = temp[temp['message'] != '<Media omitted>']
+
+    words = []
+    for message in temp['message']:
+        # Remove punctuation and split into words
+        message = re.sub(r'[^\w\s]', '', message)
+        for word in message.lower().split():
+            if word not in stop_words:
+                words.append(word)
+
+    # Count the most common words
+    word_counter = Counter(words)
+    most_common_words = [word for word, count in word_counter.most_common(top_n)]
+
+    return most_common_words
